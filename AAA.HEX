@@ -1,0 +1,210 @@
+//CREATED BY EMIRHAN ERDEM - 20217050002
+// Bilgisayar destekli devre tasarımı vize odevi.
+#include <LiquidCrystal.h>  // LCD kütüphanesi
+#include <Keypad.h>          // Keypad kütüphanesi
+#include <Servo.h>           // Servo motor kütüphanesi
+
+// LCD pinleri (RS, E, D4, D5, D6, D7)
+LiquidCrystal lcd(9, 10, 11, 5, 4, 3);
+
+// Buzzer pini
+const int buzzer_pin = 15;
+
+//sıcaklık ölçer pin
+const int termometre_pin = A0;
+
+const int yagmur_pin = 17;
+const int yagmur_led = 14;
+
+// Gaz sensörü ve LED pinleri
+const int logicStatePin_gaz = 8;
+const int redLEDPin = 12;
+const int greenLEDPin = 13;
+
+// Hareket sensörü ve diğer pinler
+const int hareket_sensor = 6;
+const int tetik = 7;
+const int ayarli_isik_pin = A8;
+
+// Servo motor
+Servo kapi_motor;
+const int motor_pin = 2;
+
+// Şifre değişkenleri
+const String true_password = "1221";  // Doğru şifre
+String user_password = "";            // Kullanıcının girdiği şifre
+bool sifreDogru = false;              // Şifre kontrol durumu
+
+// Keypad bağlantısı (4x3 matris)
+const byte satirSayisi = 4;
+const byte sutunSayisi = 3;
+char tuslar[satirSayisi][sutunSayisi] = {
+  { '1', '2', '3' },
+  { '4', '5', '6' },
+  { '7', '8', '9' },
+  { '*', '0', '#' }
+};
+byte satirPinleri[satirSayisi] = { A1, A2, A3, A4 };
+byte sutunPinleri[sutunSayisi] = { A5, A6, A7 };
+
+Keypad keypad = Keypad(makeKeymap(tuslar), satirPinleri, sutunPinleri, satirSayisi, sutunSayisi);
+
+
+
+String mevcutMesaj = "";  // lCD'de gösterilen mevcut mesaj
+
+void setup() {
+  // Pin ayarları
+  pinMode(logicStatePin_gaz, INPUT);
+  pinMode(redLEDPin, OUTPUT);
+  pinMode(greenLEDPin, OUTPUT);
+  pinMode(hareket_sensor, INPUT);
+  pinMode(tetik, OUTPUT);
+  pinMode(ayarli_isik_pin, OUTPUT);
+  pinMode(buzzer_pin, OUTPUT);
+  pinMode(termometre_pin,INPUT); // buurada sorun var buaraya bak
+  pinMode(yagmur_pin, INPUT);  // sensör pinini giriş olarak ayarla
+  pinMode(yagmur_led, OUTPUT);    // lED pinini çıkış olarak ayarla
+
+  // Seri haberleşme başlat
+  Serial.begin(9600);
+  Serial.println("Baslatiliyor...");
+  delay(10);
+  Serial.println("Sistem Hazir...");
+  Serial.println("Lutfen sifreyi girin.");
+  // LCD başlat ve başlangıç mesajı
+  lcd.begin(16, 2);
+  lcd_ekran("Sistem Hazir");
+  delay(500);
+
+  // Servo motoru başlat
+  kapi_motor.attach(motor_pin);
+  kapi_motor.write(0);  // Kapıyı kapalı konuma getir
+}
+
+void loop() {
+  
+  if (!sifreDogru) {  // Şifre doğru değilse şifre kontrol fonksiyonuna git
+    sifreDogru = Kapi_sifre();
+    return;
+  }
+
+  // Ayarlanabilir ışığı  açık tut
+  digitalWrite(ayarli_isik_pin, HIGH);
+
+  // Gaz sensörünü kontrol et
+  gazSensoruKontrol();
+
+  // Hareket sensörünü kontrol et
+  hareketSensoruKontrol();
+  Yagmur_sensor();
+  //Termometre();
+  
+}
+
+void gazSensoruKontrol() {
+  int state = digitalRead(logicStatePin_gaz);  // Gaz sensörü durumu oku
+
+  if (state == HIGH) {  // Gaz algılanırsa
+    digitalWrite(redLEDPin, HIGH);   
+    digitalWrite(greenLEDPin, LOW);  // Yeşil LED söner
+
+    
+    digitalWrite(buzzer_pin, HIGH);  // Buzzer aktif
+    //delay(200);                      
+    //digitalWrite(buzzer_pin, LOW);  
+    //delay(50);                      // 200ms bekleme
+    
+
+  } else {  // Gaz algılanmazsa
+    digitalWrite(redLEDPin, LOW);     // Kırmızı LED söner
+    digitalWrite(greenLEDPin, HIGH);  // Yeşil LED yanar
+    digitalWrite(buzzer_pin, LOW);
+  }
+}
+
+
+void hareketSensoruKontrol() {
+  int hareket_sensor_value = 0;
+  hareket_sensor_value = digitalRead(hareket_sensor);
+
+  if (hareket_sensor_value == 1) {
+    digitalWrite(tetik, HIGH);
+    lcd_ekran("Hareket Algilandi");
+      
+  } else {
+    digitalWrite(tetik, LOW);
+  }
+}
+
+void Yagmur_sensor(){
+  int durum = digitalRead(yagmur_pin);  // Sensörün durumunu oku
+
+  if (durum == HIGH) {  // Yağmur algılanırsa sensör LOW verir
+    digitalWrite(yagmur_led, HIGH);  // LED'i yak
+    Serial.println("Yağmur Algılandı! Camasirlari topla.");
+  }
+  else {
+    digitalWrite(yagmur_led, LOW);   // LED'i söndür
+    //Serial.println("Yağmur Yok. camasirlar durabilir.");
+  }
+  delay(500);
+}
+
+//burayı sor! 
+void Termometre() {
+  int analogDeger = analogRead(termometre_pin);  // LM35ten analog veri oku
+  float voltaj = (analogDeger * 4.88)/10;   // ADC değerini voltaja çevir
+  float derece = voltaj * 100;  // Voltajı sıcaklık derecesine çevir
+
+  Serial.print("Sıcaklık: ");
+  Serial.print(derece);
+  Serial.println(" C");
+  delay(200);
+  // Sıcaklık 44°C üzerindeyse uyarı ver 
+  if (derece > 44) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Dikkat: Sicaklik");
+    lcd.setCursor(0, 1);
+    lcd.print("Uyarisi!");
+  }
+}
+
+
+bool Kapi_sifre() {
+  char tus = keypad.getKey();  // Keypad'den tuş oku
+
+  if (tus) {
+    Serial.println(tus);  // Basılan tuşu yazdır
+    if (tus == '*') {  // * tuşuna basılırsa şifreyi sıfırla
+      user_password = "";
+      lcd_ekran("Sifre Sifirlandi");
+    } else if (tus == '#') {  // # tuşu ile şifreyi kontrol et
+      if (user_password == true_password) {
+        lcd_ekran("Kapi Aciliyor...");
+        kapi_motor.write(90);  // Kapıyı aç
+        delay(500);  // Kapı 2 saniye açık kalsın
+        kapi_motor.write(0);   // Kapıyı kapat
+        lcd_ekran("Kapi Kapandi");
+        return true;  // Şifre doğruysa
+      } else {
+        lcd_ekran("Yanlis Sifre!");
+        user_password = "";  // Yanlış şifreyi sıfırla
+        return false;
+      }
+    } else {
+      user_password += tus;  // Girilen tuşu şifreye ekle
+    }
+  }
+  return false;
+}
+
+void lcd_ekran(String mesaj) {
+  if (mevcutMesaj != mesaj) {  // Aynı mesajı tekrar yazma
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(mesaj);
+    mevcutMesaj = mesaj;  // Mevcut mesajı güncelle
+  }
+}
